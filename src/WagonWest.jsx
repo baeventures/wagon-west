@@ -214,7 +214,7 @@ function TrailMap({ miles, route }) {
   const clampX = (x) => Math.min(370, Math.max(30, x));
 
   return (
-    <svg viewBox="0 0 400 150" style={{ width: "100%", maxHeight: "23vh", display: "block", border: "1px solid #c3c6a8", background: "#ece9d6", borderRadius: 3 }}>
+    <svg viewBox="0 0 400 150" style={{ width: "100%", maxHeight: "23vh", flexShrink: 0, display: "block", border: "1px solid #c3c6a8", background: "#ece9d6", borderRadius: 3 }}>
       {/* double map frame */}
       <rect x="3" y="3" width="394" height="144" fill="none" stroke="#c3c6a8" strokeWidth="1.5" />
       <rect x="7" y="7" width="386" height="136" fill="none" stroke="#c3c6a8" strokeWidth="0.5" opacity="0.7" />
