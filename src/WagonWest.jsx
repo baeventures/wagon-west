@@ -1361,11 +1361,13 @@ export default function WagonWest() {
   const barColor = (h) => h >= 55 ? "#4c7d58" : h >= 30 ? "#c9a227" : "#a8462f";
   const latestDay = log.length ? log[log.length - 1].day : null;
   const todays = latestDay != null ? log.filter((e) => e.day === latestDay).slice(-2) : [];
-  // The ledger feed absorbs spare vertical space on tall screens: while the
-  // travel controls are up it grows and shows recent days; while a panel
-  // (river/hunt/fork) needs the room it collapses back to today's lines.
+  // The ledger feed sizes to its content (never larger — no empty space
+  // inside the panel border) and shrinks with a top fade when the screen is
+  // short; while a panel (river/hunt/fork) needs the room it collapses back
+  // to today's lines. Spare height on tall screens sits as open page between
+  // the map and the feed.
   const panelOpen = fork || !!river || !!hunt;
-  const feed = panelOpen ? todays : log.slice(-8);
+  const feed = panelOpen ? todays : log.slice(-20);
   const logColor = (k) => k === "bad" ? "#a8462f" : k === "good" ? "#33663f" : k === "landmark" ? "#22392b" : "#3c5a47";
   const foodDays = Math.max(0, Math.floor(food / Math.max(1, dailyFood())));
 
@@ -1472,6 +1474,7 @@ export default function WagonWest() {
 .ww-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 .ww-scroll{overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .ww-hr{height:1px;background:#c3c6a8;border:none;margin:8px 0}
+.ww-feedline{font-size:11px;line-height:1.4}
 @media (min-height:780px){
   .ww-btn{padding:14px;font-size:13px}
   .ww-ghost{padding:12px;font-size:12px}
@@ -1479,6 +1482,7 @@ export default function WagonWest() {
   .ww-stat{padding:7px 2px;font-size:10px}
   .ww-cardbtn{padding:9px 10px;font-size:11px}
   .ww-mini{padding:6px 9px;font-size:10px}
+  .ww-feedline{font-size:12.5px;line-height:1.45}
 }
 `;
 
@@ -1760,14 +1764,16 @@ export default function WagonWest() {
 
             <TrailMap miles={miles} route={route} />
 
+            {!panelOpen && <div style={{ flex: "1 1 0" }} aria-hidden="true" />}
+
             {feed.length > 0 && (
-              <div className="ww-today" style={{ flex: panelOpen ? "0 0 auto" : "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div className="ww-today" style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="ww-eyebrow" style={{ fontSize: 8, marginBottom: 2, flexShrink: 0 }}>What happened</div>
-                <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 24px)", maskImage: "linear-gradient(to bottom, transparent 0, #000 24px)" }}>
+                <div style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 24px)", maskImage: "linear-gradient(to bottom, transparent 0, #000 24px)" }}>
                   {feed.map((e) => {
                     const today = e.day === latestDay;
                     return (
-                      <p key={e.id} className="mono" style={{ fontSize: 11, lineHeight: 1.4, margin: 0, color: logColor(e.kind), opacity: today ? 1 : 0.62, fontWeight: today && (e.kind === "bad" || e.kind === "good" || e.kind === "landmark") ? 700 : 400 }}>
+                      <p key={e.id} className="mono ww-feedline" style={{ margin: 0, color: logColor(e.kind), opacity: today ? 1 : 0.62, fontWeight: today && (e.kind === "bad" || e.kind === "good" || e.kind === "landmark") ? 700 : 400 }}>
                         {!today && <span style={{ opacity: 0.75 }}>D{e.day} · </span>}{e.text}
                       </p>
                     );
