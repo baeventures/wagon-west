@@ -214,3 +214,27 @@ and the full 18-cell matrix (results archived in
 - [x] No page scroll at 375×667 and desktop on all touched screens
 - [ ] v1.2 candidates: landmark illustrations, difficulty on the result
       card art, cutoff-specific events (scree slide, thin-air fever)
+
+---
+
+# v1.2 — The Freighters' Loop + river payment gating (2026-08-23)
+
+Broken Kettle Ford (mile 640, `loop: true`) offers a fourth answer to a
+river: pay in **time**. The Freighters' Loop runs 5 days (7 in winter) up
+the kettle hills to a shallow braid — burns normal rations and season
+health per day, 40% chance the washboard track smashes a spare (or −4 to
+everyone if none owned), no drowning risk. Button disabled without enough
+food; Kettle only, by design ("the trail teaches" — it's where cash first
+runs short and the money/time/risk triangle is learned).
+
+River panels now show only payment the party can make: cash ferry iff
+money ≥ fare; gold-dust iff cash short AND dust sufficient (the gold rate
+~$14/oz vs $18 at posts made it a trap when cash sufficed). When neither,
+the copy states the fare. Panels stay ≤4 buttons everywhere.
+
+Balance: full matrix re-run (n=2000) with the loop live — every cell
+within ±1.6 of the v1.1 verified table (inside noise). The optimal bot
+takes the loop only when broke AND fragile (min health <20) AND
+provisioned; for EV it's usually worse than floating, which is the point:
+it's variance control for humans, not a win-rate lever. Mirrored in
+`cross_river()` (`KN['loop']` gates it out of the v1.0 baseline check).

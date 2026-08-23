@@ -30,7 +30,7 @@ const LANDMARKS_COMMON = [
   { name: "Split Rock Pass", short: "Split Rock", miles: 210 },
   { name: "Tinpan Creek", short: "Tinpan Ck", miles: 300, creek: true },
   { name: "Cotton Ridge", short: "Cotton Rdg", miles: 430, store: true },
-  { name: "Broken Kettle Ford", short: "Brkn Kettle", miles: 640, river: true },
+  { name: "Broken Kettle Ford", short: "Brkn Kettle", miles: 640, river: true, loop: true },
   { name: "Antelope Flats", short: "Antelope", miles: 860 },
   { name: "Sourwood Crossing", short: "Sourwood", miles: 1080, river: true },
   { name: "Table Rock Trading Post", short: "Table Rock", miles: 1300, store: true },
@@ -1071,7 +1071,7 @@ export default function WagonWest() {
       }
       if (crossed.river) {
         const depth = Math.round(crossed.deep ? rand(6, 10) : crossed.big ? rand(5, 9) : rand(2, 7));
-        setRiver({ name: crossed.name, depth });
+        setRiver({ name: crossed.name, depth, loop: !!crossed.loop });
         pushLog(`A river blocks the way. The water runs about ${depth} feet deep.`, "normal");
         sfx.water();
       }
@@ -1226,6 +1226,40 @@ export default function WagonWest() {
   function resolveRiver(choice) {
     if (!river) return;
     const { depth } = river;
+    if (choice === "loop") {
+      // The Freighters' Loop: days and food instead of dollars or risk.
+      // Mirrored in tools/sim.py cross_river() — edit there first.
+      const days = season === "winter" ? 7 : 5;
+      const perDay = dailyFood();
+      if (food < perDay * days) return;
+      const daily = RATIONS[rations].healthDelta + (seasonCfg.healthPerDay || 0) + (hasTrait("medic") ? 1 : 0);
+      let f = food;
+      let healths = members.map((m) => m.health);
+      for (let i = 0; i < days; i++) {
+        f = Math.max(0, f - perDay);
+        healths = healths.map((h) => (h > 0 ? clamp(h + daily, 0, 100) : h));
+      }
+      setFood(Math.round(f));
+      setMembers((prev) => prev.map((m, i) => ({ ...m, health: healths[i] })));
+      const have = ["wheel", "axle", "tongue"].filter((k) => parts[k] > 0);
+      if (Math.random() < 0.4) {
+        if (have.length) {
+          const k = pick(have);
+          setParts((p) => ({ ...p, [k]: Math.max(0, p[k] - 1) }));
+          pushLog(`${days} days on the Freighters' Loop. The washboard track shakes a spare ${k === "tongue" ? "wagon tongue" : k} to pieces, but the party crosses the shallow braid dry.`, "normal");
+        } else {
+          applyHealthDelta(-4);
+          pushLog(`${days} days on the Freighters' Loop. The washboard track rattles wagon and bones alike, but the party crosses the shallow braid dry.`, "normal");
+        }
+      } else {
+        pushLog(`${days} days on the Freighters' Loop, up through the kettle hills and across the shallow braid. Slow, dry, and nothing lost but time.`, "good");
+        sfx.good();
+      }
+      sfx.water();
+      setRiver(null);
+      setDay((d) => d + days);
+      return;
+    }
     if (choice === "ferry") {
       const fare = 10 + depth * 4;
       if (money < fare) return;
@@ -1388,6 +1422,12 @@ export default function WagonWest() {
   }, [log, panelOpen, screen]);
   const logColor = (k) => k === "bad" ? "#a8462f" : k === "good" ? "#33663f" : k === "landmark" ? "#22392b" : "#3c5a47";
   const foodDays = Math.max(0, Math.floor(food / Math.max(1, dailyFood())));
+
+  // ---- river options: only payment the party can actually make is shown ----
+  const riverFare = river ? 10 + river.depth * 4 : 0;
+  const riverOz = river ? Math.ceil((riverFare / 14) * 10) / 10 : 0;
+  const loopDays = season === "winter" ? 7 : 5;
+  const loopFood = dailyFood() * loopDays;
 
   // ---- store cart ----
   const cartQty = (k) => cart[k] || 0;
@@ -1835,11 +1875,18 @@ export default function WagonWest() {
                 <div className="ww-eyebrow"><Droplet size={10} style={{ verticalAlign: "-1px" }} /> River Crossing — {river.depth} ft deep</div>
                 <p className="mono" style={{ fontSize: 10, color: "#3c5a47", margin: 0 }}>
                   {river.depth <= 3 ? "Shallow enough to ford, most likely." : "Deep water. Fording would be a gamble."}
+                  {money < riverFare && gold < riverOz ? ` The ferryman asks $${riverFare} — more than the strongbox holds.` : ""}
                 </p>
-                <button className="ww-cardbtn" onClick={() => resolveRiver("ferry")} disabled={money < 10 + river.depth * 4}>Pay the ferryman — ${"" + (10 + river.depth * 4)}, safe passage</button>
-                {gold >= 0.1 && (
-                  <button className="ww-cardbtn" style={{ borderColor: "#c9a227" }} onClick={() => resolveRiver("ferryGold")} disabled={gold < Math.ceil(((10 + river.depth * 4) / 14) * 10) / 10}>
-                    Pay in gold dust — {Math.ceil(((10 + river.depth * 4) / 14) * 10) / 10} oz, his rate, safe passage
+                {money >= riverFare ? (
+                  <button className="ww-cardbtn" onClick={() => resolveRiver("ferry")}>Pay the ferryman — ${"" + riverFare}, safe passage</button>
+                ) : gold >= riverOz ? (
+                  <button className="ww-cardbtn" style={{ borderColor: "#c9a227" }} onClick={() => resolveRiver("ferryGold")}>
+                    Pay in gold dust — {riverOz} oz, his rate, safe passage
+                  </button>
+                ) : null}
+                {river.loop && (
+                  <button className="ww-cardbtn" onClick={() => resolveRiver("loop")} disabled={food < loopFood}>
+                    Take the Freighters' Loop — {loopDays} days up the kettle hills to the shallow braid ({loopFood} lbs of food)
                   </button>
                 )}
                 <button className="ww-cardbtn" onClick={() => resolveRiver("float")}>Caulk and float — free, small leak risk</button>
