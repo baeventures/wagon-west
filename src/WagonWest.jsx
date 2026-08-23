@@ -1361,6 +1361,11 @@ export default function WagonWest() {
   const barColor = (h) => h >= 55 ? "#4c7d58" : h >= 30 ? "#c9a227" : "#a8462f";
   const latestDay = log.length ? log[log.length - 1].day : null;
   const todays = latestDay != null ? log.filter((e) => e.day === latestDay).slice(-2) : [];
+  // The ledger feed absorbs spare vertical space on tall screens: while the
+  // travel controls are up it grows and shows recent days; while a panel
+  // (river/hunt/fork) needs the room it collapses back to today's lines.
+  const panelOpen = fork || !!river || !!hunt;
+  const feed = panelOpen ? todays : log.slice(-8);
   const logColor = (k) => k === "bad" ? "#a8462f" : k === "good" ? "#33663f" : k === "landmark" ? "#22392b" : "#3c5a47";
   const foodDays = Math.max(0, Math.floor(food / Math.max(1, dailyFood())));
 
@@ -1467,6 +1472,14 @@ export default function WagonWest() {
 .ww-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 .ww-scroll{overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .ww-hr{height:1px;background:#c3c6a8;border:none;margin:8px 0}
+@media (min-height:780px){
+  .ww-btn{padding:14px;font-size:13px}
+  .ww-ghost{padding:12px;font-size:12px}
+  .ww-seg{padding:11px 2px;font-size:10px}
+  .ww-stat{padding:7px 2px;font-size:10px}
+  .ww-cardbtn{padding:9px 10px;font-size:11px}
+  .ww-mini{padding:6px 9px;font-size:10px}
+}
 `;
 
   const SelChip = ({ show, label }) => show ? <span className="ww-chip">{label || "Chosen"}</span> : null;
@@ -1747,12 +1760,19 @@ export default function WagonWest() {
 
             <TrailMap miles={miles} route={route} />
 
-            {todays.length > 0 && (
-              <div className="ww-today">
-                <div className="ww-eyebrow" style={{ fontSize: 8, marginBottom: 2 }}>What happened</div>
-                {todays.map((e) => (
-                  <p key={e.id} className="mono" style={{ fontSize: 11, lineHeight: 1.4, margin: 0, color: logColor(e.kind), fontWeight: e.kind === "bad" || e.kind === "good" || e.kind === "landmark" ? 700 : 400 }}>{e.text}</p>
-                ))}
+            {feed.length > 0 && (
+              <div className="ww-today" style={{ flex: panelOpen ? "0 0 auto" : "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div className="ww-eyebrow" style={{ fontSize: 8, marginBottom: 2, flexShrink: 0 }}>What happened</div>
+                <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 24px)", maskImage: "linear-gradient(to bottom, transparent 0, #000 24px)" }}>
+                  {feed.map((e) => {
+                    const today = e.day === latestDay;
+                    return (
+                      <p key={e.id} className="mono" style={{ fontSize: 11, lineHeight: 1.4, margin: 0, color: logColor(e.kind), opacity: today ? 1 : 0.62, fontWeight: today && (e.kind === "bad" || e.kind === "good" || e.kind === "landmark") ? 700 : 400 }}>
+                        {!today && <span style={{ opacity: 0.75 }}>D{e.day} · </span>}{e.text}
+                      </p>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -1814,7 +1834,7 @@ export default function WagonWest() {
                 </div>
               </div>
             ) : (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 5 }}>
+              <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 5 }}>
                 <div className="ww-row">
                   <span className="ww-eyebrow" style={{ width: 52, flexShrink: 0, fontSize: 8 }}>Pace</span>
                   {Object.entries(PACES).map(([k, v]) => (
@@ -1828,10 +1848,10 @@ export default function WagonWest() {
                   ))}
                 </div>
                 <div className="ww-grid2" style={{ marginTop: 2 }}>
-                  <button className="ww-btn" style={{ padding: 10 }} onClick={travelOneDay} disabled={!!ending}>Travel</button>
-                  <button className="ww-ghost" style={{ padding: 9 }} onClick={startHunt} disabled={!!ending}><Crosshair size={11} style={{ verticalAlign: "-1px" }} /> Hunt</button>
-                  <button className="ww-ghost" style={{ padding: 9 }} onClick={panForGold} disabled={!!ending}><Coins size={11} style={{ verticalAlign: "-1px" }} /> Pan</button>
-                  <button className="ww-ghost" style={{ padding: 9 }} onClick={restOneDay} disabled={!!ending}><Tent size={11} style={{ verticalAlign: "-1px" }} /> Rest</button>
+                  <button className="ww-btn" onClick={travelOneDay} disabled={!!ending}>Travel</button>
+                  <button className="ww-ghost" onClick={startHunt} disabled={!!ending}><Crosshair size={11} style={{ verticalAlign: "-1px" }} /> Hunt</button>
+                  <button className="ww-ghost" onClick={panForGold} disabled={!!ending}><Coins size={11} style={{ verticalAlign: "-1px" }} /> Pan</button>
+                  <button className="ww-ghost" onClick={restOneDay} disabled={!!ending}><Tent size={11} style={{ verticalAlign: "-1px" }} /> Rest</button>
                 </div>
                 <button className="ww-mini" style={{ width: "100%", borderStyle: "dashed" }} onClick={waitForSeason} disabled={!!ending}>
                   Camp until {nextSeasonName()} (~{daysUntilNextSeason()}d, {dailyFood() * daysUntilNextSeason()} lbs)
