@@ -70,13 +70,13 @@ const DIFFICULTIES = {
 };
 
 const STORE_PRICES = {
-  food: { label: "Food (25 lbs)", cost: 9, food: 25 },
-  food100: { label: "Food (100 lbs)", cost: 34, food: 100 },
-  wheel: { label: "Spare Wheel", cost: 15, part: true },
-  axle: { label: "Spare Axle", cost: 20, part: true },
-  tongue: { label: "Spare Tongue", cost: 12, part: true },
-  ox: { label: "Ox", cost: 38 },
-  tonic: { label: "Cholera Tonic", cost: 30, tonic: true, postOnly: true },
+  food: { label: "Food (25 lbs)", cost: 9, food: 25, desc: "Feeds the party — 12 lbs a day for four on filling rations." },
+  food100: { label: "Food (100 lbs)", cost: 34, food: 100, desc: "The barrel lot. Cheapest pounds on the shelf." },
+  wheel: { label: "Spare Wheel", cost: 15, part: true, desc: "Ruts break wheels more than anything. No spare means a hard day of makeshift repairs." },
+  axle: { label: "Spare Axle", cost: 20, part: true, desc: "A snapped axle stops the wagon dead. The spare fits in an afternoon." },
+  tongue: { label: "Spare Tongue", cost: 12, part: true, desc: "The tongue takes the strain of every mile. Cheap insurance." },
+  ox: { label: "Ox", cost: 38, desc: "Pulls the wagon — a full team moves fastest. Lameness, winter, and rustlers thin it." },
+  tonic: { label: "Cholera Tonic", cost: 30, tonic: true, postOnly: true, desc: "The only answer when cholera comes, past mile 500. Keep two." },
 };
 const PART_CAP = 3; // wagon space — max spares of each kind
 
@@ -1477,9 +1477,14 @@ export default function WagonWest() {
         const q = cartQty(k);
         return (
           <div key={k} className="ww-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px" }}>
-            <div className="mono" style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <ItemGlyph k={k} />
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}<span style={{ color: "#6e8474" }}> · ${"" + priceOf(k)}{item.part ? " · own " + parts[k] + "/" + PART_CAP : item.tonic ? " · own " + tonics + "/2" : ""}</span></span>
+            <div style={{ minWidth: 0, flex: 1, paddingRight: 6 }}>
+              <div className="mono" style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <ItemGlyph k={k} />
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}<span style={{ color: "#6e8474" }}> · ${"" + priceOf(k)}{item.part ? " · own " + parts[k] + "/" + PART_CAP : item.tonic ? " · own " + tonics + "/2" : k === "ox" ? " · team of " + oxen : item.food ? " · ~" + foodDays + "d on hand" : ""}</span></span>
+              </div>
+              {item.desc && (
+                <div className="mono" style={{ fontSize: 9, color: "#6e8474", lineHeight: 1.35, marginTop: 1, paddingLeft: 18 }}>{item.desc}</div>
+              )}
             </div>
             <div className="ww-row" style={{ gap: 7 }}>
               <button className="ww-mini" style={{ padding: "2px 10px", fontSize: 13, lineHeight: 1.2 }} onClick={() => bump(k, -1)} disabled={q === 0}>−</button>
