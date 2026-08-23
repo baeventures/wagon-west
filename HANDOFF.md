@@ -132,3 +132,85 @@ win rates ~30 points).
       two-tap reset wipes from travel and outfit
 - [ ] Journal overlay opens/closes; profession perks visible in store prices
       (Farmer ox $19, Clerk 10% off)
+
+---
+
+# v1.1 — SHIPPED 2026-08-23
+
+Roadmap items 1–4 complete; item 5 shipped as a zero-binary-asset pass (see
+below). Everything above this line is the frozen v1.0 record; the balance
+tables below **supersede** the v1.0 table.
+
+## What shipped
+
+1. **Share/result card** — canvas-rendered 1200×630 run card on the end
+   screen (rank title, stats, roster with † for the dead, route/difficulty
+   byline, site URL). Share via Web Share API → clipboard → download
+   fallback chain. Rank titles: Wagon Master / Trail Captain / Weathered
+   Pilot / The Last Walker (wins by survivors); Taken at the Water /
+   Stranded in the Dust / Given to the Trail (losses by cause).
+2. **The Fork** — at Devil's Backbone (mile 1480): the Long Road (original
+   2,300-mi route) or the Mountain Cutoff (2,050 mi; Windscour Saddle,
+   The Scree Gates, Broadback Narrows crossed at 6–9 ft, Cold Hollow; no
+   trading posts; −2 health/day past the fork; event trigger ×1.75).
+   Route-aware trail map with a ghost hint of the road not taken. Save
+   format v2 (`route`, `fork`, `difficulty`); v1 saves migrate (past 1480 →
+   long road).
+3. **Event pool 9 → 15** — snakebite (0.6), abandoned wagon (0.8), eastbound
+   caravan (0.7), oxen stray (0.5, 5% loss), hailstorm (0.4), wild honey
+   (0.7). The scaled trigger `(0.35+boost) × (Σall/Σlegacy)` keeps every
+   v1.0 event at its exact original per-day odds; the new pool rides on top
+   (~9%/day). Do not change a weight without re-running sim.py.
+4. **Difficulty presets** — Greenhorn (events ×0.8, prices ×0.9), Settler
+   (×1.0 — byte-identical to v1.0), Pioneer (events ×1.2, prices ×1.15).
+   Chosen on the Season step; scales store+gear prices and the event
+   trigger only.
+5. **Asset pass** (zero binary assets, by design): selection-UI iconography
+   (professions, departures, party, store items, rare goods — lucide +
+   custom engraved-style SVGs), wagon-wheel brand mark in the dividers and
+   journal, parchment texture (inline feTurbulence data-URI), mountain
+   vignette at the fork, and a synthesized ambient bed (wind, winter howl,
+   river wash at crossings, spring/summer birdsong). Deliberate deviation:
+   the roadmap said "ambient audio files" — ambience is synthesized instead
+   to keep the no-files/no-backend architecture. Landmark illustrations
+   remain open for a future pass.
+
+## Balance spec v1.1 — verified state (n=4000/cell, optimal bot, ±1.5)
+
+Skilled humans still land ~10–15 pts lower. Baseline check reproduced the
+v1.0 table (67.8/49.2/47.7) before the new pool was enabled.
+
+| Difficulty | Route | Clerk | Carpenter | Farmer |
+|---|---|---|---|---|
+| Greenhorn | Long Road | 85% | 71% | 65% |
+| Greenhorn | Cutoff | 82% | 67% | 61% |
+| **Settler** | **Long Road** | **68%** | **47%** | **45%** |
+| Settler | Cutoff | 62% | 42% | 40% |
+| Pioneer | Long Road | 49% | 30% | 30% |
+| Pioneer | Cutoff | 41% | 25% | 24% |
+
+Reading: the new event pool costs ≤2.5 pts vs v1.0 at Settler/Long (within
+spec identity); the cutoff prices its 250 saved miles at 4–6 win pts and
+~3–8 median days — worth it when racing winter, not otherwise; difficulty
+moves win rates ±16–24 pts. Oxen loss remains the top cause of death
+everywhere; lame-ox weight is untouched from v1.0.
+
+New dials (mirror in `sim.py` `SHIPPED` dict before touching):
+`cutEvent=1.75`, `cutHealth=2`, `snakeW=0.6`, `strayW=0.5`,
+`strayLoss=0.05`, `hailW=0.4`, `honeyW=0.7`, `DIFF` mults above.
+Run `python tools/sim.py [n]` — prints baseline check, v1.1 pool check,
+and the full 18-cell matrix (results archived in
+`tools/sim-results-v1.1.txt`).
+
+## v1.1 test checklist (all verified pre-ship)
+
+- [x] Baseline sim reproduces v1.0 table with new events disabled
+- [x] Fork appears on crossing 1480; both choices; map/total/landmarks swap
+- [x] Broadback Narrows rolls 6–10 ft on the cutoff
+- [x] Difficulty selector on Season step; Pioneer prices verified in store
+      (Clerk food100 $35, ox $40)
+- [x] Result card renders 1200×630 on win AND loss; save/share buttons
+- [x] Save v2 roundtrip via link; v1 saves hydrate (route inferred)
+- [x] No page scroll at 375×667 and desktop on all touched screens
+- [ ] v1.2 candidates: landmark illustrations, difficulty on the result
+      card art, cutoff-specific events (scree slide, thin-air fever)

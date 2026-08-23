@@ -2,7 +2,9 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Heart, Wheat, Coins, Wrench, Users, Skull, Compass, Flag,
   BookOpen, Volume2, VolumeX, Crosshair, Tent, Droplet, Gem, RotateCcw,
-  Link2, Check,
+  Link2, Check, Hammer, Shovel, Snowflake, CloudRain, Flower2, Sun,
+  Stethoscope, Anvil, Pickaxe, CookingPot, Sprout, Footprints, Hand,
+  FlaskConical, Cross, Share2, Download, Mountain,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -21,7 +23,9 @@ const storageAdapter = {
   async delete(key) { localStorage.removeItem(key); },
 };
 
-const LANDMARKS = [
+// The trail is common through Devil's Backbone, then forks: the Long Road
+// (the original route) or the Mountain Cutoff (shorter, harsher, no posts).
+const LANDMARKS_COMMON = [
   { name: "Widow's Creek", short: "Widow's Ck", miles: 0 },
   { name: "Split Rock Pass", short: "Split Rock", miles: 210 },
   { name: "Tinpan Creek", short: "Tinpan Ck", miles: 300, creek: true },
@@ -30,14 +34,40 @@ const LANDMARKS = [
   { name: "Antelope Flats", short: "Antelope", miles: 860 },
   { name: "Sourwood Crossing", short: "Sourwood", miles: 1080, river: true },
   { name: "Table Rock Trading Post", short: "Table Rock", miles: 1300, store: true },
-  { name: "Devil's Backbone", short: "Devil's Bkbn", miles: 1480 },
+  { name: "Devil's Backbone", short: "Devil's Bkbn", miles: 1480, fork: true },
+];
+const LONG_TAIL = [
   { name: "Salt Meadow", short: "Salt Mdw", miles: 1660 },
   { name: "Comb Ridge", short: "Comb Rdg", miles: 1850, store: true },
   { name: "The Broadback", short: "Broadback", miles: 2050, river: true, big: true },
   { name: "Fallow Basin", short: "Fallow Bsn", miles: 2180 },
   { name: "Cutter's Valley (Journey's End)", short: "Cutter's Vly", miles: 2300 },
 ];
-const TOTAL_MILES = LANDMARKS[LANDMARKS.length - 1].miles;
+const CUTOFF_TAIL = [
+  { name: "Windscour Saddle", short: "Windscour", miles: 1600 },
+  { name: "The Scree Gates", short: "Scree Gates", miles: 1720 },
+  { name: "Broadback Narrows", short: "Bk Narrows", miles: 1830, river: true, big: true, deep: true },
+  { name: "Cold Hollow", short: "Cold Hollow", miles: 1950 },
+  { name: "Cutter's Valley (Journey's End)", short: "Cutter's Vly", miles: 2050 },
+];
+// route: null until the fork is reached, then "long" | "cutoff"
+const routeLandmarks = (route) =>
+  route === "cutoff" ? [...LANDMARKS_COMMON, ...CUTOFF_TAIL] : [...LANDMARKS_COMMON, ...LONG_TAIL];
+const routeTotal = (route) => (route === "cutoff" ? 2050 : 2300);
+const FORK_MILE = 1480;
+
+// Cutoff hardship dials — validated in tools/sim.py; edit there first.
+// At these values the cutoff runs 4-7 win points below the long road at every
+// difficulty, paying out ~5-11 fewer median days.
+const CUTOFF = { eventMult: 1.75, healthPerDay: -2 };
+
+// Difficulty presets scale event rate + prices only. Settler is the v1.0
+// baseline, byte-identical. Validated in tools/sim.py; edit there first.
+const DIFFICULTIES = {
+  greenhorn: { label: "Greenhorn", eventMult: 0.8, priceMult: 0.9, note: "A kind year on a kind road. Goods come cheap and trouble comes seldom." },
+  settler: { label: "Settler", eventMult: 1.0, priceMult: 1.0, note: "The crossing as it comes. The standard tale." },
+  pioneer: { label: "Pioneer", eventMult: 1.2, priceMult: 1.15, note: "A dry year. Dear goods, and a trail that tests every mile." },
+};
 
 const STORE_PRICES = {
   food: { label: "Food (25 lbs)", cost: 9, food: 25 },
@@ -86,6 +116,12 @@ const PROFESSIONS = [
   { id: "carpenter", label: "Carpenter", money: 650, note: "Mends many breakdowns with his own hands, free." },
   { id: "farmer", label: "Farmer", money: 500, note: "Knows livestock. Oxen cost half." },
 ];
+
+// selection-UI iconography (lucide glyphs; custom SVGs for wagon hardware)
+const PROF_ICONS = { clerk: Coins, carpenter: Hammer, farmer: Shovel };
+const DEPARTURE_ICONS = { mar: Snowflake, apr: CloudRain, may: Flower2, jun: Sun };
+const CANDIDATE_ICONS = { doc: Stethoscope, hawk: Crosshair, ruth: Anvil, finch: Pickaxe, marta: CookingPot, cole: Hand, ada: Sprout, wren: Footprints };
+const GEAR_ICONS = { musket: Crosshair, toolkit: Wrench, sluice: Coins, oven: CookingPot, medchest: Cross };
 
 const HEALTH_LABEL = (h) => {
   if (h >= 80) return { text: "Hale", color: "text-emerald-800" };
@@ -138,23 +174,34 @@ const SEASONS = {
 
 // Hand-drawn style SVG trail map. Wagon and landmarks are positioned along
 // the actual curve via getPointAtLength, so progress follows the drawn path.
-function TrailMap({ miles, total }) {
+// Per-route trail paths. Both share the drawn approach; the cutoff climbs
+// high after the fork while the long road swings low through the basin.
+const TRAIL_D = {
+  long: "M 18,106 C 70,72 92,116 142,92 C 175,76 200,48 250,64 C 295,78 330,100 382,40",
+  cutoff: "M 18,106 C 70,72 92,116 142,92 C 175,76 200,48 250,64 C 288,72 308,24 382,30",
+};
+// decorative hint of the road not taken, drawn from the fork point
+const GHOST_D = { long: "M 0,0 c 16,-12 34,-20 64,-24", cutoff: "M 0,0 c 18,8 40,12 70,-2" };
+
+function TrailMap({ miles, route }) {
   const pathRef = useRef(null);
   const [pts, setPts] = useState(null);
+  const lms = routeLandmarks(route);
+  const total = routeTotal(route);
   const progress = clamp(miles / total, 0, 1);
-
-  // path shifted down inside a taller framed viewBox
-  const D = "M 18,106 C 70,72 92,116 142,92 C 175,76 200,48 250,64 C 295,78 330,100 382,40";
+  const D = route === "cutoff" ? TRAIL_D.cutoff : TRAIL_D.long;
+  const forkIdx = LANDMARKS_COMMON.length - 1; // Devil's Backbone
+  const ghost = route === "cutoff" ? GHOST_D.cutoff : GHOST_D.long;
 
   useEffect(() => {
     const path = pathRef.current;
     if (!path) return;
     const L = path.getTotalLength();
     setPts({
-      lm: LANDMARKS.map((l) => path.getPointAtLength((l.miles / total) * L)),
+      lm: lms.map((l) => path.getPointAtLength((l.miles / total) * L)),
       wagon: path.getPointAtLength(progress * L),
     });
-  }, [miles, total, progress]);
+  }, [miles, total, progress, route]);
 
   const Pine = ({ x, y, s = 1 }) => (
     <g transform={"translate(" + x + "," + y + ") scale(" + s + ")"} opacity="0.45">
@@ -196,8 +243,14 @@ function TrailMap({ miles, total }) {
       <path ref={pathRef} d={D} fill="none" stroke="#c3c6a8" strokeWidth="3" strokeDasharray="6 5" strokeLinecap="round" />
       <path d={D} fill="none" stroke="#3f7a4e" strokeWidth="3" strokeLinecap="round" pathLength="1" strokeDasharray={progress + " 1"} />
 
+      {/* the road not taken, hinted from the fork */}
+      {pts && pts.lm[forkIdx] && (
+        <path d={ghost} transform={"translate(" + pts.lm[forkIdx].x + "," + pts.lm[forkIdx].y + ")"}
+          fill="none" stroke="#6e8474" strokeWidth="1.4" strokeDasharray="2 3" opacity="0.5" strokeLinecap="round" />
+      )}
+
       {/* river squiggles at crossings */}
-      {pts && LANDMARKS.map((l, i) => l.creek ? (
+      {pts && lms.map((l, i) => l.creek ? (
         <g key={"ck" + i} transform={"translate(" + pts.lm[i].x + "," + pts.lm[i].y + ")"} stroke="#4a6a8a" strokeWidth="1" fill="none" opacity="0.55">
           <path d="M -9,-10 q 3,2 4,6 q 1,4 4,6" />
         </g>
@@ -210,9 +263,9 @@ function TrailMap({ miles, total }) {
 
       {/* landmarks + labels */}
       {pts && pts.lm.map((p, i) => {
-        const l = LANDMARKS[i];
-        const isNext = l.miles === (LANDMARKS.find((x) => x.miles > miles) || LANDMARKS[LANDMARKS.length - 1]).miles;
-        const isEnd = i === LANDMARKS.length - 1;
+        const l = lms[i];
+        const isNext = l.miles === (lms.find((x) => x.miles > miles) || lms[lms.length - 1]).miles;
+        const isEnd = i === lms.length - 1;
         const labeled = l.store || l.river || l.creek || isNext || isEnd || i === 0;
         const above = i % 2 === 0;
         const ly = above ? Math.max(24, p.y - 10) : Math.min(142, p.y + 16);
@@ -277,6 +330,11 @@ export default function WagonWest() {
   const [hasSave, setHasSave] = useState(false);
   const [resetArmed, setResetArmed] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [route, setRoute] = useState(null);       // null until the fork; "long" | "cutoff"
+  const [fork, setFork] = useState(false);        // fork choice pending
+  const [difficulty, setDifficulty] = useState("settler");
+  const [cardUrl, setCardUrl] = useState(null);   // rendered result card (data URL)
+  const [cardMsg, setCardMsg] = useState("");
   const logEndRef = useRef(null);
   const prevMembersRef = useRef([]);
   const soundOnRef = useRef(true);
@@ -301,9 +359,10 @@ export default function WagonWest() {
 
   function buildSavePayload() {
     return JSON.stringify({
-      v: 1, screen, leaderName, profession, departure, members, pace, rations,
+      v: 2, screen, leaderName, profession, departure, members, pace, rations,
       money, gold, food, parts, oxen, day, miles, log: log.slice(-40),
       atStore, canReenter, river, gear, tonics,
+      route, fork, difficulty,
     });
   }
 
@@ -314,7 +373,7 @@ export default function WagonWest() {
     (async () => {
       try { await storageAdapter.set(SAVE_KEY, payload); setHasSave(true); } catch (e) { /* best effort */ }
     })();
-  }, [day, screen, money, gold, food, oxen, atStore, river]);
+  }, [day, screen, money, gold, food, oxen, atStore, river, route, fork]);
 
   async function clearSave() {
     try { await storageAdapter.delete(SAVE_KEY); } catch (e) { /* may not exist */ }
@@ -345,6 +404,10 @@ export default function WagonWest() {
     setCanReenter(!!s.canReenter);
     setRiver(s.river || null);
     setHunt(null);
+    // v1 saves predate the fork: anyone past Devil's Backbone was on the long road
+    setRoute(s.route ?? ((s.miles ?? 0) > FORK_MILE ? "long" : null));
+    setFork(!!s.fork);
+    setDifficulty(s.difficulty || "settler");
     sfx.start();
     setScreen(s.screen === "outfit" ? "outfit" : "travel");
   }
@@ -387,6 +450,132 @@ export default function WagonWest() {
       sfx.coin();
       setTimeout(() => setLinkCopied(false), 1800);
     } catch (e) { /* clipboard unavailable */ }
+  }
+
+  // ---------------------------- result card (v1.1) ---------------------------
+  function rankTitle(e) {
+    if (e.type === "win") {
+      if (e.survivors === 4) return "Wagon Master";
+      if (e.survivors === 3) return "Trail Captain";
+      if (e.survivors === 2) return "Weathered Pilot";
+      return "The Last Walker";
+    }
+    if (e.cause === "plague") return "Taken at the Water";
+    if (e.cause === "oxen") return "Stranded in the Dust";
+    return "Given to the Trail";
+  }
+
+  function drawWheel(c, x, y, r, color) {
+    c.save();
+    c.strokeStyle = color; c.fillStyle = color; c.lineWidth = r * 0.16; c.lineCap = "round";
+    c.beginPath(); c.arc(x, y, r * 0.78, 0, Math.PI * 2); c.stroke();
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 4) * i;
+      c.beginPath();
+      c.moveTo(x - Math.cos(a) * r * 0.78, y - Math.sin(a) * r * 0.78);
+      c.lineTo(x + Math.cos(a) * r * 0.78, y + Math.sin(a) * r * 0.78);
+      c.stroke();
+    }
+    c.beginPath(); c.arc(x, y, r * 0.22, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  function renderResultCard(e) {
+    const W = 1200, H = 630;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d");
+    const ink = "#22392b", moss = "#6e8474", frameC = "#c3c6a8", green = "#3f7a4e", rust = "#a8462f", slate = "#3c5a47";
+    c.fillStyle = "#f6f3e4"; c.fillRect(0, 0, W, H);
+    c.strokeStyle = frameC; c.lineWidth = 2; c.strokeRect(18, 18, W - 36, H - 36);
+    c.lineWidth = 1; c.globalAlpha = 0.7; c.strokeRect(27, 27, W - 54, H - 54); c.globalAlpha = 1;
+    const cx = W / 2;
+    c.textAlign = "center";
+    c.fillStyle = moss; c.font = "700 19px 'Courier Prime', monospace";
+    c.fillText("A  T R A V E L E R ' S   L E D G E R   ·   W A G O N   W E S T", cx, 92);
+    const win = e.type === "win";
+    const title = rankTitle(e).toUpperCase();
+    let size = 88;
+    c.font = "900 " + size + "px 'Playfair Display', Georgia, serif";
+    while (c.measureText(title).width > 1040 && size > 56) {
+      size -= 4;
+      c.font = "900 " + size + "px 'Playfair Display', Georgia, serif";
+    }
+    c.fillStyle = win ? ink : rust;
+    c.fillText(title, cx, 208);
+    c.strokeStyle = green; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx - 190, 258); c.lineTo(cx - 44, 258); c.stroke();
+    c.beginPath(); c.moveTo(cx + 44, 258); c.lineTo(cx + 190, 258); c.stroke();
+    drawWheel(c, cx, 258, 22, green);
+    c.fillStyle = slate; c.font = "27px 'Courier Prime', monospace";
+    const line1 = win
+      ? e.days + " days on the trail  ·  " + e.survivors + " of 4 souls  ·  $" + e.moneyLeft + " kept"
+      : "Day " + e.days + "  ·  fell " + Math.round(miles) + " miles along a " + totalMiles + "-mile road";
+    c.fillText(line1, cx, 330);
+    const profLabel = (PROFESSIONS.find((p) => p.id === profession) || PROFESSIONS[0]).label;
+    const routeTag = route === "cutoff" ? "  ·  by the Mountain Cutoff" : route === "long" ? "  ·  by the Long Road" : "";
+    c.fillText((leaderName || "The Leader") + "  ·  " + profLabel + "  ·  " + DIFFICULTIES[difficulty].label + routeTag, cx, 378);
+    c.font = "24px 'Courier Prime', monospace"; c.fillStyle = moss;
+    c.fillText(members.map((m) => (m.health > 0 ? m.name : m.name + " †")).join("   ·   "), cx, 452);
+    c.font = "italic 24px 'Courier Prime', monospace"; c.fillStyle = slate;
+    if (win) c.fillText(e.survivors === 4 ? "A clean journey. Rare, and worth telling." : "The valley is green. The cost was real.", cx, 500);
+    else if (e.epitaph) c.fillText('"' + e.epitaph + '"', cx, 500);
+    c.font = "700 20px 'Courier Prime', monospace"; c.fillStyle = moss;
+    c.fillText("wagon-west.vercel.app", cx, 566);
+    return cv.toDataURL("image/png");
+  }
+
+  useEffect(() => {
+    if (screen !== "end" || !ending) { setCardUrl(null); setCardMsg(""); return; }
+    let dead = false;
+    (async () => {
+      try {
+        try {
+          await document.fonts.load("900 88px 'Playfair Display'");
+          await document.fonts.load("700 27px 'Courier Prime'");
+        } catch (err) { /* fall back to system faces */ }
+        const url = renderResultCard(ending);
+        if (!dead) setCardUrl(url);
+      } catch (err) { /* canvas unavailable — the screen works without the card */ }
+    })();
+    return () => { dead = true; };
+  }, [screen, ending]);
+
+  function flashCardMsg(t) {
+    setCardMsg(t);
+    setTimeout(() => setCardMsg(""), 2500);
+  }
+
+  async function shareCard() {
+    if (!cardUrl) return;
+    try {
+      const blob = await (await fetch(cardUrl)).blob();
+      const file = new File([blob], "wagon-west-tale.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Wagon West" });
+        return;
+      }
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        flashCardMsg("Card copied — paste it anywhere");
+        return;
+      }
+      downloadCard();
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // share sheet dismissed
+      downloadCard();
+    }
+  }
+
+  function downloadCard() {
+    if (!cardUrl) return;
+    const a = document.createElement("a");
+    a.href = cardUrl;
+    a.download = "wagon-west-tale.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    flashCardMsg("Card saved");
   }
 
   // a finished run clears its save
@@ -469,17 +658,20 @@ export default function WagonWest() {
     return () => { if (audioRef.current.musicTimer) clearInterval(audioRef.current.musicTimer); };
   }, [screen, soundOn]);
 
+
   // ---------------------------- derived ----------------------------
+  const landmarks = useMemo(() => routeLandmarks(route), [route]);
+  const totalMiles = routeTotal(route);
   const nextLandmark = useMemo(
-    () => LANDMARKS.find((l) => l.miles > miles) || LANDMARKS[LANDMARKS.length - 1],
-    [miles]
+    () => landmarks.find((l) => l.miles > miles) || landmarks[landmarks.length - 1],
+    [miles, landmarks]
   );
   const lastLandmark = useMemo(
-    () => [...LANDMARKS].reverse().find((l) => l.miles <= miles) || LANDMARKS[0],
-    [miles]
+    () => [...landmarks].reverse().find((l) => l.miles <= miles) || landmarks[0],
+    [miles, landmarks]
   );
   const livingCount = members.filter((m) => m.health > 0).length;
-  const busy = atStore || !!river || !!hunt;
+  const busy = atStore || !!river || !!hunt || fork;
   const hasTrait = (t) => members.some((m) => m.trait === t && m.health > 0);
   const addFood = (amt) => setFood((f) => clamp(f + amt, 0, FOOD_CAP));
   const dailyFood = () => Math.round(RATIONS[rations].perPerson * livingCount * (hasTrait("cook") ? 0.85 : 1) * (gear.oven ? 0.92 : 1));
@@ -511,6 +703,48 @@ export default function WagonWest() {
     prevSeasonRef.current = season;
   }, [season, screen]);
 
+  // ambient bed, all synthesized: wind (howls in winter), water at crossings,
+  // birdsong in the warm months
+  const ambientRef = useRef([]);
+  useEffect(() => {
+    const stopAll = () => {
+      ambientRef.current.forEach((n) => {
+        try { n.stop ? n.stop() : clearInterval(n.timer); } catch (e) { /* already stopped */ }
+      });
+      ambientRef.current = [];
+    };
+    if (screen !== "travel" || !soundOn) return stopAll;
+    try {
+      const ctx = getCtx();
+      const mkNoise = (type, freq, vol) => {
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource();
+        src.buffer = buf; src.loop = true;
+        const filt = ctx.createBiquadFilter();
+        filt.type = type; filt.frequency.value = freq;
+        const g = ctx.createGain(); g.gain.value = vol;
+        src.connect(filt); filt.connect(g); g.connect(ctx.destination);
+        src.start();
+        return src;
+      };
+      ambientRef.current.push(mkNoise("lowpass", season === "winter" ? 280 : 480, season === "winter" ? 0.022 : 0.011));
+      if (river) ambientRef.current.push(mkNoise("bandpass", 750, 0.02));
+      if (season === "spring" || season === "summer") {
+        const timer = setInterval(() => {
+          if (Math.random() < 0.4) {
+            const f = 2100 + Math.random() * 1100;
+            tone(f, 0.09, "sine", 0.02);
+            tone(f * 1.2, 0.07, "sine", 0.016, 0.11);
+          }
+        }, 9000);
+        ambientRef.current.push({ timer });
+      }
+    } catch (e) { /* audio unavailable; play on silently */ }
+    return stopAll;
+  }, [screen, soundOn, season, !!river]);
+
   // ---------------------------- lifecycle ----------------------------
   function prepareJourney() {
     const prof = PROFESSIONS.find((p) => p.id === profession);
@@ -538,6 +772,8 @@ export default function WagonWest() {
     setCart({});
     setGear({});
     setTonics(0);
+    setRoute(null);
+    setFork(false);
     setScreen("outfit");
   }
 
@@ -589,21 +825,19 @@ export default function WagonWest() {
   useEffect(() => {
     if (screen !== "travel" || ending) return;
     const alive = members.filter((m) => m.health > 0).length;
-    if (miles >= TOTAL_MILES && alive > 0) {
+    if (miles >= totalMiles && alive > 0) {
       setEnding({ type: "win", survivors: alive, moneyLeft: money, days: day });
       sfx.good();
       setScreen("end");
     }
-  }, [miles, members]);
+  }, [miles, members, route]);
 
   // ---------------------------- events ----------------------------
   function rollEvent(paceCfg, dayMiles, crossed) {
-    const roll = Math.random();
     const riskBoost = paceCfg === PACES.grueling ? 0.12 : paceCfg === PACES.strenuous ? 0.05 : 0;
-    if (roll > 0.35 + riskBoost) return;
 
     const pool = [
-      { w: 3, run: () => {
+      { w: 3, L: 1, run: () => {
           const dmg = Math.round(rand(6, 16) * (gear.medchest ? 0.5 : 1));
           const living = members.map((m, i) => ({ i, h: m.health })).filter((x) => x.h > 0);
           const weakest = living.length ? living.reduce((a, b) => (b.h < a.h ? b : a)) : null;
@@ -612,7 +846,7 @@ export default function WagonWest() {
           pushLog(`Fever in the wagon. ${members[who]?.name || "Someone"} wakes shivering. Health falls.`, "bad");
           sfx.bad();
         } },
-      { w: 2, run: () => {
+      { w: 2, L: 1, run: () => {
           const part = pick(["wheel", "axle", "tongue"]);
           const partName = { wheel: "wheel", axle: "axle", tongue: "wagon tongue" }[part];
           if (hasTrait("smith") && Math.random() < 0.5) {
@@ -640,19 +874,19 @@ export default function WagonWest() {
             sfx.bad();
           }
         } },
-      { w: 2, run: () => {
+      { w: 2, L: 1, run: () => {
           const gain = Math.round(rand(15, 40));
           addFood(gain);
           pushLog(`A stroke of luck: game wanders near camp. +${gain} lbs of food.`, "good");
           sfx.good();
         } },
-      { w: 2, run: () => {
+      { w: 2, L: 1, run: () => {
           const lost = Math.round(rand(10, 30));
           setFood((f) => Math.max(0, f - lost));
           pushLog(`Rain gets into the flour sacks. ${lost} lbs of food lost to rot.`, "bad");
           sfx.bad();
         } },
-      { w: 1, run: () => {
+      { w: 1, L: 1, run: () => {
           const targets = [];
           if (money > 10) { targets.push("money"); targets.push("money"); }
           if (food > 30) { targets.push("food"); targets.push("food"); }
@@ -683,7 +917,7 @@ export default function WagonWest() {
           }
           sfx.bad();
         } },
-      { w: 1, run: () => {
+      { w: 1, L: 1, run: () => {
           const burned = Math.round(food * rand(0.12, 0.22));
           setFood((f) => Math.max(0, f - burned));
           const have = ["wheel", "axle", "tongue"].filter((k) => parts[k] > 0);
@@ -692,18 +926,18 @@ export default function WagonWest() {
           pushLog("Fire spreads from the cookfire in the night. " + burned + " lbs of provisions burn" + (k ? ", along with a spare " + (k === "tongue" ? "wagon tongue" : k) : "") + " before it's beaten out.", "bad");
           sfx.bad();
         } },
-      { w: 2, run: () => {
+      { w: 2, L: 1, run: () => {
           applyHealthDelta(4);
           pushLog("Fair weather and firm ground. Everyone rests a little easier.", "good");
           sfx.good();
         } },
-      { w: crossed ? 0 : 2, run: () => {
+      { w: crossed ? 0 : 2, L: 1, run: () => {
           const lost = Math.round((dayMiles || 0) * 0.7);
           setMiles((m) => Math.max(0, m - lost));
           pushLog("Rain turns the trail to soup. The wagon claws forward and slides back — most of the day's miles are lost.", "bad");
           sfx.bad();
         } },
-      { w: paceCfg === PACES.grueling ? 2.25 : paceCfg === PACES.strenuous ? 1.5 : 0.75, run: () => {
+      { w: paceCfg === PACES.grueling ? 2.25 : paceCfg === PACES.strenuous ? 1.5 : 0.75, L: 1, run: () => {
           setOxen((o) => Math.max(0, o - 1));
           pushLog(paceCfg === PACES.grueling
             ? "Driven hard at a grueling pace, an ox pulls up lame and has to be let go."
@@ -712,9 +946,78 @@ export default function WagonWest() {
             : "An ox pulls up lame and has to be let go. The team pulls harder now.", "bad");
           sfx.bad();
         } },
+      // ---- v1.1 events (no L flag) — weights validated in tools/sim.py ----
+      { w: 0.6, run: () => {
+          const living = members.map((m, i) => ({ i, h: m.health })).filter((x) => x.h > 0);
+          if (!living.length) return;
+          const who = pick(living).i;
+          const dmg = Math.round(rand(8, 18) * (gear.medchest ? 0.5 : 1));
+          applyHealthDelta(-dmg, who);
+          pushLog(`A rattler strikes from under a shelf of stone. ${members[who]?.name || "Someone"}'s leg swells hot and hard.`, "bad");
+          sfx.bad();
+        } },
+      { w: 0.8, run: () => {
+          const short = ["wheel", "axle", "tongue"].filter((k) => parts[k] < PART_CAP);
+          if (short.length && Math.random() < 0.6) {
+            const k = pick(short);
+            setParts((p) => ({ ...p, [k]: Math.min(PART_CAP, p[k] + 1) }));
+            pushLog(`An abandoned wagon sits weathering in the grass. Its ${k === "tongue" ? "wagon tongue" : k} is still sound — yours now.`, "good");
+          } else {
+            const found = Math.round(rand(20, 45));
+            addFood(found);
+            pushLog(`An abandoned wagon sits weathering in the grass. Inside, ${found} lbs of sealed provisions, still good.`, "good");
+          }
+          sfx.good();
+        } },
+      { w: 0.7, run: () => {
+          const gift = Math.round(rand(10, 25));
+          addFood(gift);
+          applyHealthDelta(3);
+          pushLog(`A caravan bound east shares its fire, its spare flour, and its news of the road ahead. +${gift} lbs, and spirits lifted.`, "good");
+          sfx.good();
+        } },
+      { w: 0.5, run: () => {
+          if (Math.random() < 0.05) {
+            setOxen((o) => Math.max(0, o - 1));
+            pushLog("The oxen stray in the night. Come morning, one is simply gone — tracks and nothing more.", "bad");
+          } else {
+            const lost = Math.round(rand(4, 10));
+            setMiles((m) => Math.max(0, m - lost));
+            pushLog("The oxen stray in the night. Half the morning is lost rounding them up.", "bad");
+          }
+          sfx.bad();
+        } },
+      { w: 0.4, run: () => {
+          applyHealthDelta(-4);
+          const have = ["wheel", "axle", "tongue"].filter((k) => parts[k] > 0);
+          const smashed = have.length && Math.random() < 0.25 ? pick(have) : null;
+          if (smashed) setParts((p) => ({ ...p, [smashed]: Math.max(0, p[smashed] - 1) }));
+          pushLog("Hail comes down hard enough to dent tin. Everyone is bruised" + (smashed ? ", and a spare " + (smashed === "tongue" ? "wagon tongue" : smashed) + " is smashed to kindling" : "") + ".", "bad");
+          sfx.bad();
+        } },
+      { w: 0.7, run: () => {
+          const found = Math.round(rand(10, 25));
+          addFood(found);
+          if (Math.random() < 0.2) {
+            const who = Math.floor(Math.random() * members.length);
+            applyHealthDelta(-3, who);
+            pushLog(`Wild honey in a deadfall oak — ${found} lbs of sweetness, and ${members[who]?.name || "someone"} takes stings collecting it.`, "good");
+          } else {
+            pushLog(`Wild honey in a deadfall oak — ${found} lbs of sweetness for the larder.`, "good");
+          }
+          sfx.good();
+        } },
     ];
-    const total = pool.reduce((s, p) => s + p.w, 0);
-    let r = Math.random() * total;
+    // The scaled trigger keeps every v1.0 event at its original per-day odds
+    // while the v1.1 events ride on top; difficulty and the cutoff scale the
+    // whole pool. Mirrored exactly in tools/sim.py — edit there first.
+    const legacySum = pool.reduce((s, p) => s + (p.L ? p.w : 0), 0);
+    const allSum = pool.reduce((s, p) => s + p.w, 0);
+    const trigger = (0.35 + riskBoost) * (allSum / legacySum)
+      * DIFFICULTIES[difficulty].eventMult
+      * (route === "cutoff" ? CUTOFF.eventMult : 1);
+    if (Math.random() > trigger) return;
+    let r = Math.random() * allSum;
     for (const p of pool) { r -= p.w; if (r <= 0) { p.run(); return; } }
   }
 
@@ -737,6 +1040,7 @@ export default function WagonWest() {
     if (paceCfg.healthCost) applyHealthDelta(-paceCfg.healthCost);
     applyHealthDelta(rationCfg.healthDelta);
     if (seasonCfg.healthPerDay) applyHealthDelta(seasonCfg.healthPerDay);
+    if (route === "cutoff") applyHealthDelta(CUTOFF.healthPerDay); // thin air, cold nights
     if (hasTrait("medic")) applyHealthDelta(1);
     if (season === "winter" && Math.random() < 0.012) {
       setOxen((o) => Math.max(0, o - 1));
@@ -745,13 +1049,17 @@ export default function WagonWest() {
     }
     if (starving) { applyHealthDelta(-12); }
 
-    const newMiles = clamp(miles + distance, 0, TOTAL_MILES);
+    const newMiles = clamp(miles + distance, 0, totalMiles);
     setMiles(newMiles);
 
-    const crossed = LANDMARKS.find((l) => l.miles > miles && l.miles <= newMiles);
+    const crossed = landmarks.find((l) => l.miles > miles && l.miles <= newMiles);
     if (crossed) {
       pushLog(`The party reaches ${crossed.name}.`, "landmark");
       sfx.landmark();
+      if (crossed.fork && !route) {
+        setFork(true);
+        pushLog("The trail splits here. Two roads run west from the spine of the ridge.", "normal");
+      }
       if (crossed.store) {
         setAtStore(true);
         setCart({});
@@ -762,7 +1070,7 @@ export default function WagonWest() {
         pushLog("Color in the gravel here — a pan might pay before the trading post ahead.", "good");
       }
       if (crossed.river) {
-        const depth = Math.round(crossed.big ? rand(5, 9) : rand(2, 7));
+        const depth = Math.round(crossed.deep ? rand(6, 10) : crossed.big ? rand(5, 9) : rand(2, 7));
         setRiver({ name: crossed.name, depth });
         pushLog(`A river blocks the way. The water runs about ${depth} feet deep.`, "normal");
         sfx.water();
@@ -859,7 +1167,7 @@ export default function WagonWest() {
     const rationCfg = RATIONS[rations];
     setFood((f) => Math.max(0, f - dailyFood()));
     applyHealthDelta(season === "winter" ? -5 : -2);
-    const nearRiver = LANDMARKS.some((l) => (l.river || l.creek) && Math.abs(l.miles - miles) < 130);
+    const nearRiver = landmarks.some((l) => (l.river || l.creek) && Math.abs(l.miles - miles) < 130);
     // Balanced so an average pan day covers the party's food cost:
     // near water EV ~0.68 oz (~$12/day), far EV ~0.21 oz (~$3.75/day) vs ~$3.40/day food.
     // Winter cuts yields roughly in half — frozen creeks don't pay.
@@ -889,11 +1197,14 @@ export default function WagonWest() {
   // ---------------------------- store ----------------------------
   function priceOf(key) {
     const item = STORE_PRICES[key];
-    let c = item.food && season === "winter" ? item.cost * 2 : item.cost;
+    const base = Math.round(item.cost * DIFFICULTIES[difficulty].priceMult);
+    let c = item.food && season === "winter" ? base * 2 : base;
     if (key === "ox" && profession === "farmer") c = Math.round(c * 0.5);
     if (profession === "clerk") c = Math.round(c * 0.9);
     return c;
   }
+
+  const gearPriceOf = (k) => Math.round(GEAR[k].cost * DIFFICULTIES[difficulty].priceMult);
 
   function buyItem(key) {
     const item = STORE_PRICES[key];
@@ -958,6 +1269,19 @@ export default function WagonWest() {
     setFood((f) => Math.max(0, f - dailyFood()));
     setRiver(null);
     setDay((d) => d + 1);
+  }
+
+  // ---------------------------- the fork ----------------------------
+  function resolveFork(choice) {
+    if (!fork) return;
+    setRoute(choice);
+    setFork(false);
+    if (choice === "cutoff") {
+      pushLog("The party turns onto the Mountain Cutoff. The road climbs toward Windscour Saddle — short, high, and empty of posts.", "landmark");
+    } else {
+      pushLog("The party keeps to the Long Road, down through Salt Meadow toward the last trading post at Comb Ridge.", "landmark");
+    }
+    sfx.landmark();
   }
 
   // ---------------------------- wait out the season ----------------------------
@@ -1026,6 +1350,8 @@ export default function WagonWest() {
     setAtStore(false);
     setCanReenter(false);
     setEnding(null);
+    setRoute(null);
+    setFork(false);
   }
 
   // ---------------------------- render (real CSS — artifact-safe) ----------------------------
@@ -1068,10 +1394,11 @@ export default function WagonWest() {
   };
   const buyGear = (k) => {
     const g = GEAR[k];
-    if (gear[k] || money < g.cost) return;
-    setMoney((m) => m - g.cost);
+    const cost = gearPriceOf(k);
+    if (gear[k] || money < cost) return;
+    setMoney((m) => m - cost);
     setGear((prev) => ({ ...prev, [k]: true }));
-    pushLog("Bought a " + g.label.toLowerCase() + " for $" + g.cost + ". " + g.desc + ".", "good");
+    pushLog("Bought a " + g.label.toLowerCase() + " for $" + cost + ". " + g.desc + ".", "good");
     sfx.coin();
   };
 
@@ -1081,7 +1408,10 @@ export default function WagonWest() {
         const q = cartQty(k);
         return (
           <div key={k} className="ww-panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px" }}>
-            <div className="mono" style={{ fontSize: 10 }}>{item.label}<span style={{ color: "#6e8474" }}> · ${"" + priceOf(k)}{item.part ? " · own " + parts[k] + "/" + PART_CAP : item.tonic ? " · own " + tonics + "/2" : ""}</span></div>
+            <div className="mono" style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <ItemGlyph k={k} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}<span style={{ color: "#6e8474" }}> · ${"" + priceOf(k)}{item.part ? " · own " + parts[k] + "/" + PART_CAP : item.tonic ? " · own " + tonics + "/2" : ""}</span></span>
+            </div>
             <div className="ww-row" style={{ gap: 7 }}>
               <button className="ww-mini" style={{ padding: "2px 10px", fontSize: 13, lineHeight: 1.2 }} onClick={() => bump(k, -1)} disabled={q === 0}>−</button>
               <span className="mono" style={{ fontSize: 11, width: 14, textAlign: "center", fontWeight: q > 0 ? 700 : 400 }}>{q}</span>
@@ -1108,7 +1438,7 @@ export default function WagonWest() {
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Courier+Prime:wght@400;700&display=swap');
 .ww-app{height:100vh;height:100dvh;overflow:hidden;background:#e6e2cf;color:#22392b;display:flex;justify-content:center;padding:6px;box-sizing:border-box}
 .ww-app *{box-sizing:border-box}
-.ww-frame{position:relative;width:100%;max-width:560px;height:100%;background:#f6f3e4;border:1px solid #c3c6a8;border-radius:4px;box-shadow:0 2px 0 #c3c6a8;display:flex;flex-direction:column;overflow:hidden}
+.ww-frame{position:relative;width:100%;max-width:560px;height:100%;background:#f6f3e4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.36 0 0 0 0 0.24 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E") repeat;border:1px solid #c3c6a8;border-radius:4px;box-shadow:0 2px 0 #c3c6a8;display:flex;flex-direction:column;overflow:hidden}
 .ww-pad{padding:10px 12px;display:flex;flex-direction:column;flex:1;min-height:0}
 .mono{font-family:'Courier Prime',monospace}
 .serif{font-family:'Playfair Display',serif}
@@ -1131,7 +1461,7 @@ export default function WagonWest() {
 .ww-stat{border:1px solid #c3c6a8;background:#ece9d6;border-radius:3px;padding:4px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;font-family:'Courier Prime',monospace;font-size:9px;text-align:center;line-height:1.25}
 .ww-input{width:100%;background:transparent;border:none;border-bottom:2px solid #c3c6a8;font-family:'Courier Prime',monospace;font-size:16px;padding:6px 0;color:#22392b;outline:none}
 .ww-input:focus{border-bottom-color:#3f7a4e}
-.ww-overlay{position:absolute;inset:0;background:#f6f3e4;z-index:20;display:flex;flex-direction:column;padding:12px}
+.ww-overlay{position:absolute;inset:0;background:#f6f3e4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.36 0 0 0 0 0.24 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E") repeat;z-index:20;display:flex;flex-direction:column;padding:12px}
 .ww-row{display:flex;gap:5px;align-items:center}
 .ww-grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
 .ww-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
@@ -1140,6 +1470,59 @@ export default function WagonWest() {
 `;
 
   const SelChip = ({ show, label }) => show ? <span className="ww-chip">{label || "Chosen"}</span> : null;
+
+  // the wagon-wheel brand mark (matches the favicon)
+  const WheelMark = ({ size = 15, color = "#3f7a4e" }) => (
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" style={{ display: "block" }}>
+      <g stroke={color} strokeWidth="5.5" strokeLinecap="round" fill="none">
+        <circle cx="32" cy="32" r="24" />
+        <line x1="32" y1="8" x2="32" y2="56" /><line x1="8" y1="32" x2="56" y2="32" />
+        <line x1="15" y1="15" x2="49" y2="49" /><line x1="49" y1="15" x2="15" y2="49" />
+      </g>
+      <circle cx="32" cy="32" r="7" fill={color} />
+    </svg>
+  );
+
+  // store-item glyphs, drawn in the map's engraved style
+  const ItemGlyph = ({ k, size = 12, color = "#6e8474" }) => {
+    if (k === "food" || k === "food100") return <Wheat size={size} color={color} />;
+    if (k === "wheel") return <WheelMark size={size} color={color} />;
+    if (k === "tonic") return <FlaskConical size={size} color={color} />;
+    if (k === "axle") return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+        <g stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none">
+          <line x1="4" y1="12" x2="20" y2="12" /><circle cx="4" cy="12" r="2.4" /><circle cx="20" cy="12" r="2.4" />
+        </g>
+      </svg>
+    );
+    if (k === "tongue") return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+        <g stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none">
+          <path d="M 12,21 L 12,10" /><path d="M 12,10 L 6,3" /><path d="M 12,10 L 18,3" />
+        </g>
+      </svg>
+    );
+    if (k === "ox") return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+        <g stroke={color} strokeWidth="2" strokeLinecap="round" fill="none">
+          <path d="M 4,5 C 4,10 8,12 12,12 C 16,12 20,10 20,5" />
+          <circle cx="12" cy="16" r="5" />
+        </g>
+        <circle cx="10" cy="15" r="1.1" fill={color} /><circle cx="14" cy="15" r="1.1" fill={color} />
+      </svg>
+    );
+    return null;
+  };
+
+  const MountainVig = () => (
+    <svg viewBox="0 0 160 30" style={{ width: "100%", maxWidth: 200, margin: "0 auto", display: "block", opacity: 0.75 }} aria-hidden="true">
+      <g fill="none" stroke="#6e8474" strokeWidth="1.2" strokeLinejoin="round">
+        <path d="M 6,26 L 30,8 L 44,18 L 58,4 L 78,26" />
+        <path d="M 70,26 L 92,10 L 104,17 L 122,6 L 150,26" opacity="0.7" />
+      </g>
+      <path d="M 6,27 C 50,23 110,25 152,20" fill="none" stroke="#3f7a4e" strokeWidth="1" strokeDasharray="3 3" />
+    </svg>
+  );
 
   return (
     <div className="ww-app">
@@ -1152,11 +1535,11 @@ export default function WagonWest() {
             <h1 className="serif" style={{ fontSize: 44, fontWeight: 900, margin: "6px 0 2px" }}>WAGON WEST</h1>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, margin: "6px 0", opacity: .7 }}>
               <div style={{ height: 1, width: 60, background: "#3f7a4e" }} />
-              <Compass size={15} color="#3f7a4e" />
+              <WheelMark size={16} />
               <div style={{ height: 1, width: 60, background: "#3f7a4e" }} />
             </div>
             <p className="mono" style={{ fontSize: 12, color: "#3c5a47", maxWidth: 380, margin: "10px auto 0", lineHeight: 1.6 }}>
-              {TOTAL_MILES} miles of open country stand between your family and a new start.
+              {totalMiles} miles of open country stand between your family and a new start.
               Ration wisely. Choose your pace. Not everyone who leaves Widow's Creek reaches Cutter's Valley.
             </p>
             <div style={{ marginTop: 24 }}>
@@ -1191,17 +1574,23 @@ export default function WagonWest() {
                 <div>
                   <div className="ww-eyebrow" style={{ marginBottom: 5 }}>Your Trade</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {PROFESSIONS.map((p) => (
-                      <button key={p.id} type="button"
-                        className={"ww-cardbtn" + (profession === p.id ? " sel" : "")}
-                        onClick={() => { setProfession(p.id); sfx.coin(); }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span className="serif" style={{ fontSize: 13, fontWeight: 700 }}>{p.label}</span>
-                          {profession === p.id ? <SelChip show label="Chosen" /> : <span style={{ color: "#6e8474" }}>${"" + p.money}</span>}
-                        </div>
-                        <div style={{ marginTop: 2, color: profession === p.id ? "#ccd7bf" : "#3c5a47" }}>${"" + p.money} · {p.note}</div>
-                      </button>
-                    ))}
+                    {PROFESSIONS.map((p) => {
+                      const PIcon = PROF_ICONS[p.id];
+                      const sel = profession === p.id;
+                      return (
+                        <button key={p.id} type="button"
+                          className={"ww-cardbtn" + (sel ? " sel" : "")}
+                          onClick={() => { setProfession(p.id); sfx.coin(); }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span className="serif" style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                              <PIcon size={13} color={sel ? "#ccd7bf" : "#6e8474"} />{p.label}
+                            </span>
+                            {sel ? <SelChip show label="Chosen" /> : <span style={{ color: "#6e8474" }}>${"" + p.money}</span>}
+                          </div>
+                          <div style={{ marginTop: 2, color: sel ? "#ccd7bf" : "#3c5a47" }}>${"" + p.money} · {p.note}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1210,18 +1599,37 @@ export default function WagonWest() {
             {setupStep === 1 && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
                 <div className="ww-eyebrow">Departure Window</div>
-                {DEPARTURES.map((d) => (
-                  <button key={d.id} type="button"
-                    className={"ww-cardbtn" + (departure === d.id ? " sel" : "")}
-                    onClick={() => { setDeparture(d.id); sfx.coin(); }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span className="serif" style={{ fontSize: 13, fontWeight: 700 }}>{d.label}</span>
-                      <SelChip show={departure === d.id} />
-                    </div>
-                    <div style={{ marginTop: 2, color: departure === d.id ? "#ccd7bf" : "#3c5a47" }}>{d.note}</div>
-                  </button>
-                ))}
-                <p className="mono" style={{ fontSize: 10, color: "#6e8474", fontStyle: "italic", margin: "4px 0 0" }}>
+                {DEPARTURES.map((d) => {
+                  const DIcon = DEPARTURE_ICONS[d.id];
+                  const sel = departure === d.id;
+                  return (
+                    <button key={d.id} type="button"
+                      className={"ww-cardbtn" + (sel ? " sel" : "")}
+                      onClick={() => { setDeparture(d.id); sfx.coin(); }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span className="serif" style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                          <DIcon size={13} color={sel ? "#ccd7bf" : "#6e8474"} />{d.label}
+                        </span>
+                        <SelChip show={sel} />
+                      </div>
+                      <div style={{ marginTop: 2, color: sel ? "#ccd7bf" : "#3c5a47" }}>{d.note}</div>
+                    </button>
+                  );
+                })}
+                <hr className="ww-hr" style={{ margin: "5px 0" }} />
+                <div className="ww-eyebrow">The Crossing</div>
+                <div className="ww-row">
+                  {Object.entries(DIFFICULTIES).map(([k, d]) => (
+                    <button key={k} className={"ww-seg" + (difficulty === k ? " on" : "")}
+                      onClick={() => { if (difficulty !== k) { setDifficulty(k); sfx.coin(); } }}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mono" style={{ fontSize: 10, color: "#6e8474", fontStyle: "italic", margin: "1px 0 0" }}>
+                  {DIFFICULTIES[difficulty].note}
+                </p>
+                <p className="mono" style={{ fontSize: 10, color: "#6e8474", fontStyle: "italic", margin: "3px 0 0" }}>
                   The trail runs 150 to 210 days. Leave late or linger, and winter finds you in the passes.
                 </p>
               </div>
@@ -1245,7 +1653,10 @@ export default function WagonWest() {
                           else sfx.bad();
                         }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span className="serif" style={{ fontSize: 12, fontWeight: 700 }}>{c.name}</span>
+                          <span className="serif" style={{ fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                            {(() => { const CIcon = CANDIDATE_ICONS[c.id]; return CIcon ? <CIcon size={11} style={{ flexShrink: 0 }} color={isPicked ? "#ccd7bf" : "#6e8474"} /> : null; })()}
+                            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                          </span>
                           {isPicked ? <SelChip show label="In Party" /> : <span style={{ color: "#6e8474", fontSize: 9 }}>{c.cost > 0 ? "$" + c.cost : "free"}</span>}
                         </div>
                         <div style={{ color: isPicked ? "#ccd7bf" : "#6e8474", fontSize: 9 }}>{c.role}{isPicked && c.cost > 0 ? " · $" + c.cost : ""}</div>
@@ -1326,7 +1737,7 @@ export default function WagonWest() {
                   <button className="ww-mini" style={{ padding: 4 }} onClick={() => setSoundOn((s) => !s)} aria-label="Sound">
                     {soundOn ? <Volume2 size={11} /> : <VolumeX size={11} />}
                   </button>
-                  <span>{Math.round(miles)}/{TOTAL_MILES} mi</span>
+                  <span>{Math.round(miles)}/{totalMiles} mi</span>
                 </div>
                 {resetArmed && <div style={{ color: "#a8462f", marginTop: 2 }}>Tap again to wipe run</div>}
                 {linkCopied && <div style={{ color: "#33663f", marginTop: 2 }}>Save link copied</div>}
@@ -1334,7 +1745,7 @@ export default function WagonWest() {
               </div>
             </div>
 
-            <TrailMap miles={miles} total={TOTAL_MILES} />
+            <TrailMap miles={miles} route={route} />
 
             {todays.length > 0 && (
               <div className="ww-today">
@@ -1361,7 +1772,21 @@ export default function WagonWest() {
               })}
             </div>
 
-            {river ? (
+            {fork ? (
+              <div className="ww-panel" style={{ padding: 9, flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+                <div className="ww-eyebrow"><Mountain size={10} style={{ verticalAlign: "-1px" }} /> The Trail Splits — Devil's Backbone</div>
+                <MountainVig />
+                <p className="mono" style={{ fontSize: 10, color: "#3c5a47", margin: 0 }}>
+                  From the spine of the ridge, two roads run west. Wagons have gone both ways. Not all of them wrote back.
+                </p>
+                <button className="ww-cardbtn" onClick={() => resolveFork("long")}>
+                  The Long Road — down past Salt Meadow to the last trading post at Comb Ridge. 820 miles of known trail.
+                </button>
+                <button className="ww-cardbtn" onClick={() => resolveFork("cutoff")}>
+                  The Mountain Cutoff — over Windscour Saddle and through the scree. 570 miles. No posts, thin air, and the Broadback runs narrow and deep.
+                </button>
+              </div>
+            ) : river ? (
               <div className="ww-panel" style={{ padding: 9, flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div className="ww-eyebrow"><Droplet size={10} style={{ verticalAlign: "-1px" }} /> River Crossing — {river.depth} ft deep</div>
                 <p className="mono" style={{ fontSize: 10, color: "#3c5a47", margin: 0 }}>
@@ -1438,7 +1863,7 @@ export default function WagonWest() {
             </h2>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, margin: "8px 0", opacity: .7 }}>
               <div style={{ height: 1, width: 60, background: "#3f7a4e" }} />
-              <Compass size={14} color="#3f7a4e" />
+              <WheelMark size={15} />
               <div style={{ height: 1, width: 60, background: "#3f7a4e" }} />
             </div>
             {ending.type === "win" ? (
@@ -1454,12 +1879,26 @@ export default function WagonWest() {
                 <p style={{ margin: 0 }}>{ending.cause === "plague"
                   ? "Day " + ending.days + ". Cholera came to the camp in the night, and there was no medicine. None were spared."
                   : ending.cause === "oxen"
-                  ? "Day " + ending.days + ". The last ox is gone, and the wagon will not move again — " + Math.round((miles / TOTAL_MILES) * 100) + "% of the way to Cutter's Valley."
-                  : "Day " + ending.days + ". " + Math.round((miles / TOTAL_MILES) * 100) + "% of the way to Cutter's Valley."}</p>
+                  ? "Day " + ending.days + ". The last ox is gone, and the wagon will not move again — " + Math.round((miles / totalMiles) * 100) + "% of the way to Cutter's Valley."
+                  : "Day " + ending.days + ". " + Math.round((miles / totalMiles) * 100) + "% of the way to Cutter's Valley."}</p>
                 <p style={{ margin: "10px 0 0", fontStyle: "italic" }}>"{ending.epitaph}"</p>
               </div>
             )}
-            <button className="ww-btn" style={{ maxWidth: 280, margin: "22px auto 0", display: "block" }} onClick={restart}>
+            {cardUrl && (
+              <div style={{ marginTop: 14 }}>
+                <img src={cardUrl} alt="Run summary card" style={{ width: "100%", maxWidth: 320, border: "1px solid #c3c6a8", borderRadius: 3, boxShadow: "0 2px 0 #c3c6a8", display: "block", margin: "0 auto" }} />
+                <div className="ww-row" style={{ maxWidth: 320, margin: "8px auto 0" }}>
+                  <button className="ww-btn" style={{ flex: 1.3, padding: 9 }} onClick={shareCard}>
+                    <Share2 size={11} style={{ verticalAlign: "-1px" }} /> Share the Tale
+                  </button>
+                  <button className="ww-ghost" style={{ flex: 1, padding: 8 }} onClick={downloadCard}>
+                    <Download size={11} style={{ verticalAlign: "-1px" }} /> Save
+                  </button>
+                </div>
+                {cardMsg && <div className="mono" style={{ fontSize: 10, color: "#33663f", marginTop: 5 }}>{cardMsg}</div>}
+              </div>
+            )}
+            <button className="ww-btn" style={{ maxWidth: 280, margin: "16px auto 0", display: "block" }} onClick={restart}>
               Start a New Ledger
             </button>
           </div>
@@ -1482,11 +1921,15 @@ export default function WagonWest() {
                 <div style={{ marginTop: 8 }}>
                   <div className="ww-eyebrow" style={{ marginBottom: 4 }}>Rare Goods — one of each, this far west</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {Object.entries(GEAR).filter(([k]) => !gear[k]).map(([k, g]) => (
-                      <button key={k} className="ww-cardbtn" onClick={() => buyGear(k)} disabled={money < g.cost}>
-                        {g.label} — ${"" + g.cost} · {g.desc}
-                      </button>
-                    ))}
+                    {Object.entries(GEAR).filter(([k]) => !gear[k]).map(([k, g]) => {
+                      const GIcon = GEAR_ICONS[k];
+                      return (
+                        <button key={k} className="ww-cardbtn" onClick={() => buyGear(k)} disabled={money < gearPriceOf(k)}>
+                          <GIcon size={11} style={{ verticalAlign: "-2px", marginRight: 5 }} color="#6e8474" />
+                          {g.label} — ${"" + gearPriceOf(k)} · {g.desc}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1505,6 +1948,11 @@ export default function WagonWest() {
             <div className="ww-panel ww-scroll" style={{ flex: 1, padding: 10 }}>
               {log.map((entry) => (
                 <p key={entry.id} className="mono" style={{ fontSize: 11, lineHeight: 1.5, margin: "0 0 5px", color: logColor(entry.kind), fontWeight: entry.kind === "landmark" ? 700 : 400 }}>
+                  {entry.kind === "landmark" && (
+                    <span style={{ display: "inline-block", verticalAlign: "-1px", marginRight: 4 }}>
+                      <WheelMark size={9} color="#22392b" />
+                    </span>
+                  )}
                   <span style={{ opacity: .6 }}>Day {entry.day} — </span>{entry.text}
                 </p>
               ))}

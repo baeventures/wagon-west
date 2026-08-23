@@ -1,0 +1,50 @@
+
+=== v1.0 BASELINE CHECK (legacy events only, long/settler, n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            67.8      181  3.99    98.9  win:2711, oxen:1153, plague:135
+Carpenter mid-build         49.2      210  3.84    84.8  win:1969, oxen:1876, plague:154
+Farmer lean-build           47.7      216  3.82    83.7  win:1908, oxen:1839, plague:247
+
+=== v1.1 EVENT POOL (long/settler, n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            67.6      181  3.98    98.2  win:2704, oxen:1166, plague:130
+Carpenter mid-build         46.8      209  3.83    84.6  oxen:1926, win:1872, plague:198
+Farmer lean-build           45.4      217  3.81    83.2  oxen:1942, win:1814, plague:234
+
+=== GREENHORN / LONG ROAD (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            85.2      167  3.99    99.1  win:3408, oxen:479, plague:113
+Carpenter mid-build         70.8      196  3.88    88.4  win:2830, oxen:1007, plague:161
+Farmer lean-build           64.7      205  3.84    85.3  win:2587, oxen:1228, plague:182
+
+=== GREENHORN / MOUNTAIN CUTOFF (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            81.5      161  3.95    95.1  win:3259, oxen:656, plague:85
+Carpenter mid-build         67.0      197  3.88    88.9  win:2679, oxen:1206, plague:115
+Farmer lean-build           61.2      206  3.84    85.8  win:2450, oxen:1417, plague:129
+
+=== SETTLER / LONG ROAD (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            67.6      181  3.98    98.2  win:2704, oxen:1166, plague:130
+Carpenter mid-build         46.8      209  3.83    84.6  oxen:1926, win:1872, plague:198
+Farmer lean-build           45.4      217  3.81    83.2  oxen:1942, win:1814, plague:234
+
+=== SETTLER / MOUNTAIN CUTOFF (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            61.5      178  3.94    94.0  win:2462, oxen:1435, plague:101
+Carpenter mid-build         42.1      211  3.84    85.0  oxen:2174, win:1685, plague:137
+Farmer lean-build           40.2      217  3.82    84.0  oxen:2185, win:1609, plague:197
+
+=== PIONEER / LONG ROAD (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            48.6      196  3.97    97.3  win:1945, oxen:1882, plague:172
+Carpenter mid-build         30.1      219  3.83    83.8  oxen:2562, win:1202, plague:233
+Farmer lean-build           29.5      228  3.78    79.3  oxen:2553, win:1179, plague:262
+
+=== PIONEER / MOUNTAIN CUTOFF (n=4000) ===
+CONFIG                      WIN%  MedDays  Surv  Full4%  TOP CAUSES
+Clerk best-build            41.1      197  3.93    93.0  oxen:2235, win:1643, plague:122
+Carpenter mid-build         24.5      219  3.81    82.5  oxen:2841, win:981, plague:174
+Farmer lean-build           24.1      228  3.77    79.6  oxen:2812, win:966, plague:216
+
+[128.9s total]

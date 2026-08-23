@@ -7,6 +7,10 @@ Client-side only: no backend, no database, no auth. All audio is synthesized
 in-browser; saves live in localStorage, with shareable save links via the URL
 hash.
 
+v1.1: three difficulty presets, the fork at Devil's Backbone (Long Road vs
+Mountain Cutoff), 15 trail events, and a shareable result card at journey's
+end.
+
 ## Develop
 
 ```
