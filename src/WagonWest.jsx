@@ -1368,6 +1368,24 @@ export default function WagonWest() {
   // the map and the feed.
   const panelOpen = fork || !!river || !!hunt;
   const feed = panelOpen ? todays : log.slice(-20);
+  // fade the feed's top edge only when older lines are actually clipped —
+  // a fully visible ledger renders unfaded
+  const feedInnerRef = useRef(null);
+  const [feedClipped, setFeedClipped] = useState(false);
+  useEffect(() => {
+    const el = feedInnerRef.current;
+    if (!el) { setFeedClipped(false); return; }
+    // top-clipped content (justify-end) never enters scrollHeight; compare
+    // the first line's edge against the container instead
+    const check = () => {
+      const first = el.firstElementChild;
+      setFeedClipped(!!first && first.getBoundingClientRect().top < el.getBoundingClientRect().top - 1);
+    };
+    check();
+    if (document.fonts?.ready) document.fonts.ready.then(check).catch(() => {});
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [log, panelOpen, screen]);
   const logColor = (k) => k === "bad" ? "#a8462f" : k === "good" ? "#33663f" : k === "landmark" ? "#22392b" : "#3c5a47";
   const foodDays = Math.max(0, Math.floor(food / Math.max(1, dailyFood())));
 
@@ -1769,7 +1787,7 @@ export default function WagonWest() {
             {feed.length > 0 && (
               <div className="ww-today" style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="ww-eyebrow" style={{ fontSize: 8, marginBottom: 2, flexShrink: 0 }}>What happened</div>
-                <div style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 24px)", maskImage: "linear-gradient(to bottom, transparent 0, #000 24px)" }}>
+                <div ref={feedInnerRef} style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", ...(feedClipped ? { WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 24px)", maskImage: "linear-gradient(to bottom, transparent 0, #000 24px)" } : {}) }}>
                   {feed.map((e) => {
                     const today = e.day === latestDay;
                     return (
