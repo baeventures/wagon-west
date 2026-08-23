@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vercel/
+*.local
+.DS_Store
+
+# Original handoff drop — its contents live in the repo as HANDOFF.md,
+# src/WagonWest.jsx, and tools/sim.py
+wagon-west-handoff/
