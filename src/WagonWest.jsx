@@ -1230,13 +1230,17 @@ export default function WagonWest() {
       // The Freighters' Loop: days and food instead of dollars or risk.
       // Mirrored in tools/sim.py cross_river() — edit there first.
       const days = season === "winter" ? 7 : 5;
-      const perDay = dailyFood();
+      const perDay = dailyFood(); // provisions packed at departure, fixed for the trip
       if (food < perDay * days) return;
-      const daily = RATIONS[rations].healthDelta + (seasonCfg.healthPerDay || 0) + (hasTrait("medic") ? 1 : 0);
+      const base = RATIONS[rations].healthDelta + (seasonCfg.healthPerDay || 0);
+      const medicIdx = members.findIndex((m) => m.trait === "medic");
       let f = food;
       let healths = members.map((m) => m.health);
       for (let i = 0; i < days; i++) {
         f = Math.max(0, f - perDay);
+        // the medic's care ends the day he dies — recheck against the
+        // locally simulated health state each day
+        const daily = base + (medicIdx >= 0 && healths[medicIdx] > 0 ? 1 : 0);
         healths = healths.map((h) => (h > 0 ? clamp(h + daily, 0, 100) : h));
       }
       setFood(Math.round(f));

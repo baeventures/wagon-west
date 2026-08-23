@@ -159,9 +159,11 @@ def cross_river(s, big, deep=False, loop=False):
             liv=[s.h[i] for i in range(4) if s.h[i]>0]
             if loop and liv and min(liv)<20 and s.food>=s.dfood()*days:
                 cfg=SEA[s.sea()]
-                daily=RAT[s.ration][1]+cfg[1]+(1 if s.trait_on('doc') else 0)
+                per=s.dfood()  # provisions packed at departure, mirrors the JSX
+                base=RAT[s.ration][1]+cfg[1]
                 for _ in range(days):
-                    s.food=max(0,s.food-s.dfood()); s.hurt(daily)
+                    s.food=max(0,s.food-per)
+                    s.hurt(base+(1 if s.trait_on('doc') else 0))  # medic bonus rechecked daily
                 if r.random()<0.4:
                     have=[k for k in s.parts if s.parts[k]>0]
                     if have: s.parts[r.choice(have)]-=1
