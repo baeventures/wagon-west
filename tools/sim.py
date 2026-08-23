@@ -4,7 +4,7 @@ from collections import Counter
 # Landmark geography. LM is the long road (v1.0 baseline, unchanged).
 # The cutoff shares everything through the fork at mile 1480, then runs
 # storeless to a deeper Broadback crossing and a 2050-mile finish.
-LM = [(0,{}),(210,{}),(300,{'creek':1}),(430,{'store':1}),(640,{'river':1}),(860,{}),
+LM = [(0,{}),(210,{}),(300,{'creek':1}),(430,{'store':1}),(640,{'river':1,'loop':1}),(860,{}),
       (1080,{'river':1}),(1300,{'store':1}),(1560,{}),(1800,{}),(2000,{'store':1}),
       (2300,{'river':1,'big':1}),(2450,{}),(2600,{})]
 FORK = 1480
@@ -142,7 +142,7 @@ def event(s, pace, dist, crossed, diff='settler'):
         x-=w
         if x<=0: f(); return
 
-def cross_river(s, big, deep=False):
+def cross_river(s, big, deep=False, loop=False):
     r=s.rng
     depth=round(r.uniform(6,10)) if deep else round(r.uniform(5,9)) if big else round(r.uniform(2,7))
     fare=10+depth*4
@@ -150,8 +150,27 @@ def cross_river(s, big, deep=False):
     else:
         oz=-(-fare*10//14)/10  # ceil to 0.1
         if s.gold>=oz: s.gold=round(s.gold-oz,1)
-        else:  # float
-            if r.random()<0.25:
+        else:
+            # Freighters' Loop (Broken Kettle only): safe-but-slow. The bot
+            # takes it when broke AND fragile (a float's -6 to everyone could
+            # kill) and provisioned; mirrors resolveRiver("loop") in
+            # WagonWest.jsx.
+            days=7 if s.sea()=='winter' else 5
+            liv=[s.h[i] for i in range(4) if s.h[i]>0]
+            if loop and liv and min(liv)<20 and s.food>=s.dfood()*days:
+                cfg=SEA[s.sea()]
+                per=s.dfood()  # provisions packed at departure, mirrors the JSX
+                base=RAT[s.ration][1]+cfg[1]
+                for _ in range(days):
+                    s.food=max(0,s.food-per)
+                    s.hurt(base+(1 if s.trait_on('doc') else 0))  # medic bonus rechecked daily
+                if r.random()<0.4:
+                    have=[k for k in s.parts if s.parts[k]>0]
+                    if have: s.parts[r.choice(have)]-=1
+                    else: s.hurt(-4)
+                s.day+=days
+                return
+            if r.random()<0.25:  # float
                 s.food=max(0,s.food-round(r.uniform(15,40))); s.hurt(-6)
     s.food=max(0,s.food-s.dfood()); s.day+=1
 
@@ -191,7 +210,7 @@ def shop(s, mi, diff='settler'):
     s.day+=1  # a day at the post
 
 KN={'total':2600,'huntA':5,'huntB':0.42,'wintox':0.02,'stormw':2,'thin':0.6,'lame':1.0,'plague':0.008,'fsave':0.4,'foxhalf':0,'csave':0.3,
-    'newev':1,'cutEvent':1.25,'cutHealth':1,'snakeW':0.8,'strayW':0.6,'hailW':0.5,'strayLoss':0.25,'honeyW':0.6}
+    'newev':1,'cutEvent':1.25,'cutHealth':1,'snakeW':0.8,'strayW':0.6,'hailW':0.5,'strayLoss':0.25,'honeyW':0.6,'loop':1}
 def simulate(prof, picks, seed, route='long', diff='settler'):
     s=Run(prof,picks,seed,route); r=s.rng
     s.slot={p:i+1 for i,p in enumerate(picks)}
@@ -282,7 +301,7 @@ def simulate(prof, picks, seed, route='long', diff='settler'):
             if f.get('store') and m not in visited:
                 visited.add(m); shop(s,m,diff)
             if f.get('river'):
-                cross_river(s,f.get('big'),f.get('deep'))
+                cross_river(s,f.get('big'),f.get('deep'),bool(f.get('loop')) and bool(KN['loop']))
 
 def batch(prof,picks,n=1500,base=0,route='long',diff='settler'):
     res=[simulate(prof,picks,base*100000+i,route,diff) for i in range(n)]
@@ -298,7 +317,7 @@ def batch(prof,picks,n=1500,base=0,route='long',diff='settler'):
 # Shipped constants (v1.0 balance + v1.1 additions)
 SHIPPED=dict(total=2300,huntA=7,huntB=0.5,wintox=0.012,lame=0.75,plague=0.008,
              fsave=0,foxhalf=1,csave=0.4,stormw=2,thin=0.6,
-             newev=1,cutEvent=1.75,cutHealth=2,snakeW=0.6,strayW=0.5,hailW=0.4,strayLoss=0.05,honeyW=0.7)
+             newev=1,cutEvent=1.75,cutHealth=2,snakeW=0.6,strayW=0.5,hailW=0.4,strayLoss=0.05,honeyW=0.7,loop=1)
 KEY=[('clerk',['doc','hawk','marta'],'Clerk best-build'),
      ('carp',['hawk','marta'],'Carpenter mid-build'),
      ('farmer',['hawk','marta'],'Farmer lean-build')]
@@ -315,8 +334,8 @@ if __name__=='__main__':
     n=int(sys.argv[1]) if len(sys.argv)>1 else 1500
     t0=time.time()
 
-    # 1. v1.0 baseline check: legacy events only, long road, settler.
-    KN.update(SHIPPED); KN['newev']=0
+    # 1. v1.0 baseline check: legacy events only, no loop, long road, settler.
+    KN.update(SHIPPED); KN['newev']=0; KN['loop']=0
     table(f'v1.0 BASELINE CHECK (legacy events only, long/settler, n={n})',
           [(lb, batch(p,pk,n,base=i+1)) for i,(p,pk,lb) in enumerate(KEY)])
 
